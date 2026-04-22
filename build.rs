@@ -287,6 +287,47 @@ fn convert_token(token: &str, bare_terminals: &HashSet<String>) -> String {
     }
 }
 
+/// True if a .yrl token (quoted or bare) is a terminal.
+fn is_terminal_tok(token: &str, bare_terminals: &HashSet<String>) -> bool {
+    if token == "'$empty'" || token == "$empty" {
+        return false;
+    }
+    (token.starts_with('\'') && token.ends_with('\'') && token.len() >= 2)
+        || bare_terminals.contains(token)
+}
+
+/// Generate the Rust action code block (without braces) for a rule.
+///
+/// Terminals become `crate::Term::token(...)` leaves; nonterminals are
+/// propagated with `?`.  Empty productions return an empty node.
+fn generate_action(lhs: &str, rhs: &[String], bare_terminals: &HashSet<String>) -> String {
+    let real_rhs: Vec<&String> = rhs
+        .iter()
+        .filter(|t| **t != "'$empty'" && **t != "$empty")
+        .collect();
+
+    if real_rhs.is_empty() {
+        return format!("Ok(crate::Term::node(\"{lhs}\", vec![]))");
+    }
+
+    let mut parts = Vec::new();
+    for (i, tok) in real_rhs.iter().enumerate() {
+        let n = i + 1;
+        if is_terminal_tok(tok, bare_terminals) {
+            parts.push(format!(
+                "crate::Term::token(__gt_lexer.span_str(\
+                 __gt_arg_{n}.as_ref().unwrap_or_else(|e| e).span()))"
+            ));
+        } else {
+            parts.push(format!("__gt_arg_{n}?"));
+        }
+    }
+    format!(
+        "Ok(crate::Term::node(\"{lhs}\", vec![{}]))",
+        parts.join(", ")
+    )
+}
+
 /// Format a RHS token list for output, returning a string ending with a space
 /// (or empty string for empty productions).
 fn format_rhs(rhs: &[String], bare_terminals: &HashSet<String>) -> String {
@@ -467,17 +508,18 @@ fn generate_grammar(src: &str) -> String {
             None => continue,
         };
 
-        out.push_str(&format!("{} -> Result<(), ()>:\n", lhs));
+        out.push_str(&format!("{} -> Result<crate::Term, ()>:\n", lhs));
         for (i, rhs) in alts.iter().enumerate() {
             let prefix = if i == 0 { "    " } else { "  | " };
             let rhs_str = format_rhs(rhs, &bare_terminals);
+            let action = generate_action(lhs, rhs, &bare_terminals);
             if let Some(prec) = needs_prec(lhs, rhs) {
                 out.push_str(&format!(
-                    "{}{}%prec {} {{ Err(()) }}\n",
-                    prefix, rhs_str, prec
+                    "{}{}%prec {} {{ {} }}\n",
+                    prefix, rhs_str, prec, action
                 ));
             } else {
-                out.push_str(&format!("{}{}{{ Err(()) }}\n", prefix, rhs_str));
+                out.push_str(&format!("{}{}{{ {} }}\n", prefix, rhs_str, action));
             }
         }
         out.push_str("  ;\n");
