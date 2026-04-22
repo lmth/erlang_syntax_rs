@@ -1,0 +1,20 @@
+[package]
+name = "erlang-syntax-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Trustworthy Erlang source parser in Rust, derived from erl_parse.yrl"
+license = "Apache-2.0"
+
+[features]
+default = []
+locations = []
+
+[dependencies]
+lrpar = "0.14.1"
+lrlex = "0.14.1"
+cfgrammar = "0.14.1"
+
+[build-dependencies]
+lrpar = "0.14.1"
+lrlex = "0.14.1"
+cfgrammar = "0.14.1"
