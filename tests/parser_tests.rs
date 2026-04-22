@@ -118,3 +118,71 @@ fn parses_function_with_guard() {
     let res = parse_form("abs_val(X) when X >= 0 -> X; abs_val(X) -> -X.\n");
     assert!(res.is_ok(), "Expected Ok, got {:?}", res);
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Regression: split_forms must skip dots inside % line comments
+
+#[test]
+fn split_forms_skips_dots_in_comments() {
+    // "a.o." inside a comment must not be treated as a form terminator
+    let src = "%% See RFC a.o. for details\n-define(FOO, 1).\n";
+    let forms = split_forms(src);
+    assert_eq!(
+        forms.len(), 1,
+        "Expected 1 form, got {}: {:?}",
+        forms.len(), forms
+    );
+    assert!(parse_form(&format!("{}\n", forms[0].trim_end())).is_ok());
+}
+
+#[test]
+fn split_forms_skips_dots_in_strings() {
+    let src = "-define(PATH, \"a.b.c\").\n";
+    let forms = split_forms(src);
+    assert_eq!(forms.len(), 1, "got {:?}", forms);
+    assert!(parse_form(&format!("{}\n", forms[0].trim_end())).is_ok());
+}
+
+#[test]
+fn split_forms_skips_dots_in_quoted_atoms() {
+    let src = "-define(A, 'a.b').\n";
+    let forms = split_forms(src);
+    assert_eq!(forms.len(), 1, "got {:?}", forms);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Regression: lexer must tokenise Erlang base#digits integer literals
+
+#[test]
+fn parses_hex_integer_literal() {
+    // 16#ff is standard Erlang; the lexer must accept it as a single integer token
+    let res = parse_form("-define(MASK, 16#ff).\n");
+    assert!(res.is_ok(), "Expected Ok for 16#ff, got {:?}", res);
+    assert!(find_token(&res.unwrap(), "16#ff"));
+}
+
+#[test]
+fn parses_large_hex_integer_literal() {
+    let res = parse_form("-define(MAX, 16#7fffffff).\n");
+    assert!(res.is_ok(), "Expected Ok for 16#7fffffff, got {:?}", res);
+    assert!(find_token(&res.unwrap(), "16#7fffffff"));
+}
+
+#[test]
+fn parses_octal_integer_literal() {
+    // 8#77 is octal in Erlang
+    let res = parse_form("-define(OCT, 8#77).\n");
+    assert!(res.is_ok(), "Expected Ok for 8#77, got {:?}", res);
+    assert!(find_token(&res.unwrap(), "8#77"));
+}
+
+#[test]
+fn define_after_dotted_comment_is_parsed() {
+    // Full integration: a define following a comment with a dot must parse
+    let src = "%% ConfD daemon a.o. control\n-define(MAAPI_AAA_RELOAD, 400).\n";
+    let results = parse_forms(src);
+    // The comment is not a form; only the define should appear
+    let ok_results: Vec<_> = results.iter().filter(|r| r.is_ok()).collect();
+    assert_eq!(ok_results.len(), 1, "Expected 1 successful form, got {:?}", results);
+    assert!(find_token(ok_results[0].as_ref().unwrap(), "MAAPI_AAA_RELOAD"));
+}

@@ -39,6 +39,9 @@ pub fn parse_form(input: &str) -> Result<Term, String> {
 /// Forms are delimited by `.\n` (a dot at end of line).  The returned strings
 /// each include the trailing dot and newline so that `parse_form` can process
 /// them directly.
+///
+/// Dots inside `%` line comments, double-quoted strings, and single-quoted
+/// atoms are not treated as form terminators.
 pub fn split_forms(input: &str) -> Vec<&str> {
     let mut forms = Vec::new();
     let mut start = 0;
@@ -46,16 +49,57 @@ pub fn split_forms(input: &str) -> Vec<&str> {
     let len = bytes.len();
     let mut i = 0;
     while i < len {
-        // Look for '.' at end of "logical line": '.' followed by whitespace or EOF
-        if bytes[i] == b'.' && (i + 1 >= len || bytes[i + 1].is_ascii_whitespace()) {
-            let end = (i + 1).min(len);
-            let piece = input[start..end].trim();
-            if !piece.is_empty() {
-                forms.push(&input[start..end]);
+        match bytes[i] {
+            b'%' => {
+                // Line comment: skip until end of line
+                while i < len && bytes[i] != b'\n' {
+                    i += 1;
+                }
             }
-            start = i + 1;
+            b'"' => {
+                // Double-quoted string: skip until closing " (handle escapes)
+                i += 1;
+                while i < len {
+                    if bytes[i] == b'\\' {
+                        i += 2; // skip escaped char
+                    } else if bytes[i] == b'"' {
+                        i += 1;
+                        break;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            b'\'' => {
+                // Single-quoted atom: skip until closing ' (handle escapes)
+                i += 1;
+                while i < len {
+                    if bytes[i] == b'\\' {
+                        i += 2;
+                    } else if bytes[i] == b'\'' {
+                        i += 1;
+                        break;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            b'.' => {
+                // Form terminator: '.' followed by whitespace or EOF
+                if i + 1 >= len || bytes[i + 1].is_ascii_whitespace() {
+                    let end = (i + 1).min(len);
+                    let piece = input[start..end].trim();
+                    if !piece.is_empty() {
+                        forms.push(&input[start..end]);
+                    }
+                    start = i + 1;
+                }
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
         }
-        i += 1;
     }
     // Remaining text after last dot
     let tail = input[start..].trim();

@@ -3,7 +3,7 @@
 %[^\n]*  ;
 [0-9]+\.[0-9]+([eE][+-]?[0-9]+)?  "float"
 \$([\\][^\n]|[^\\ \t\n])  "char"
-[0-9]+  "integer"
+[0-9]+(\#[0-9a-fA-F]+)?  "integer"
 after  "after"
 andalso  "andalso"
 and  "and"
